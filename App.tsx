@@ -30,10 +30,10 @@ function App() {
                 background: '#fff0f0',
                 border: '2px solid #e53e3e',
                 borderRadius: '4px', 
-                transform: 'rotate(0deg)', // Keeping text straight, but visual difference via border
+                transform: 'rotate(0deg)', 
                 fontWeight: 'bold',
-                clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)', // CSS Diamond Shape
-                padding: '20px 10px', // More padding for diamond content
+                clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)', 
+                padding: '20px 10px', 
                 width: '120px',
                 height: '80px',
                 display: 'flex',
@@ -44,7 +44,6 @@ function App() {
         if (type?.toLowerCase().includes('start') || type?.toLowerCase().includes('end')) {
             return { ...baseStyle, borderRadius: '20px', background: '#f0fff4', border: '2px solid #38a169', fontWeight: 'bold' };
         }
-        // Process nodes
         return { ...baseStyle, borderRadius: '2px', border: '1px solid #3182ce' };
     }
 
@@ -61,7 +60,6 @@ function App() {
         };
     }
 
-    // Mindmap levels styling could go here
     return baseStyle;
   };
 
@@ -74,7 +72,7 @@ function App() {
       const nodes: DiagramNode[] = rawData.nodes.map(n => ({
         id: n.id,
         type: 'default', 
-        position: { x: 0, y: 0 }, // layout engine will fix this
+        position: { x: 0, y: 0 }, 
         data: { label: n.label, details: n.details, type: n.type },
         style: getNodeStyle(n.type, type)
       }));
@@ -84,7 +82,8 @@ function App() {
         source: e.source,
         target: e.target,
         label: e.label,
-        type: type === DiagramType.FLOWCHART ? 'step' : 'smoothstep', // Step edges for flowcharts look better
+        // Using smoothstep for everything reduces visual complexity vs step
+        type: 'smoothstep', 
         markerEnd: {
             type: MarkerType.ArrowClosed,
         },
@@ -92,7 +91,7 @@ function App() {
         style: { stroke: '#555', strokeWidth: 1.5 }
       }));
 
-      // Apply Layout Algorithm with Diagram Type awareness
+      // Apply Layout Algorithm
       const layoutedData = applyLayout(nodes, edges, layout, type);
 
       setDiagramData({
