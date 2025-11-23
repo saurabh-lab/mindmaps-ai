@@ -1,8 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { DiagramType, LayoutStyle, GeneratedResponse, DrillDownResponse } from "../types";
 
-// Switched to 2.5-flash as it is generally faster and more stable for structured tasks without special access
-const MODEL_NAME = 'gemini-2.5-flash';
+// Upgraded to 3-pro for complex reasoning and detailed generation
+const MODEL_NAME = 'gemini-3-pro-preview';
 
 // Lazy initialization to prevent crash if env vars are missing at startup
 let aiInstance: GoogleGenAI | null = null;
@@ -11,31 +11,12 @@ const getAiClient = () => {
   if (aiInstance) return aiInstance;
   
   const apiKey = process.env.API_KEY;
-  
-  // Debug logging (masked) to help user verify key loading
-  if (!apiKey) {
-    console.error("Gemini Service: API Key is missing or empty.");
-  } else {
-    console.log(`Gemini Service: API Key present (starts with ${apiKey.substring(0, 4)}...)`);
-  }
-
+  // Check for empty string as well, since we default to '' in vite.config.ts
   if (apiKey && apiKey.length > 0) {
     aiInstance = new GoogleGenAI({ apiKey });
     return aiInstance;
   }
   return null;
-};
-
-// Helper to clean markdown code blocks from JSON response
-const cleanJsonString = (text: string): string => {
-  let clean = text.trim();
-  // Remove markdown code blocks if present
-  if (clean.startsWith('```json')) {
-    clean = clean.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-  } else if (clean.startsWith('```')) {
-    clean = clean.replace(/^```\s*/, '').replace(/\s*```$/, '');
-  }
-  return clean;
 };
 
 const graphSchema = {
@@ -47,9 +28,9 @@ const graphSchema = {
         type: Type.OBJECT,
         properties: {
           id: { type: Type.STRING, description: "Unique short ID (e.g., 'n1')" },
-          label: { type: Type.STRING, description: "Text to display on the node" },
-          type: { type: Type.STRING, description: "Type of node (e.g., 'default', 'diamond' for decision, 'input', 'output')" },
-          details: { type: Type.STRING, description: "A short 1-sentence description of this node." }
+          label: { type: Type.STRING, description: "Text to display on the node. Be specific." },
+          type: { type: Type.STRING, description: "Type of node (e.g., 'default', 'decision', 'process', 'entity')" },
+          details: { type: Type.STRING, description: "A detailed description or list of attributes for this node." }
         },
         required: ["id", "label"]
       }
@@ -79,22 +60,27 @@ export const generateDiagram = async (
 
   const ai = getAiClient();
   if (!ai) {
-    throw new Error("API Key is missing. Please ensure API_KEY is set in your .env file and RESTART the server.");
+    throw new Error("API Key is missing. Please create a .env file with API_KEY=your_key and restart the server.");
   }
 
   const prompt = `
-    Create a ${type} based on the following description: "${description}".
-    Layout Style Intention: ${layout}.
+    Create a highly detailed and exhaustive ${type} based on the following description: "${description}".
+    Layout Intention: ${layout}.
     Additional Context: ${additionalData || "None"}.
     
-    Requirements:
-    1. Create a logical structure suitable for a ${type}.
-    2. If it is a Flowchart, use standard node types (decision points, processes).
-    3. If it is an ERD, nodes should represent entities.
-    4. If it is a Mindmap, use a central topic and branch out.
-    5. If it is an Organizational Chart (Org Chart), nodes should represent Roles or Departments with a clear hierarchy.
-    6. Limit the initial graph to 10-15 key nodes to avoid clutter.
-    7. Return strictly JSON matching the schema.
+    CRITICAL INSTRUCTIONS FOR COMPLETENESS:
+    1. **Exhaustive Breakdown**: Do not summarize. Break down every topic into granular sub-topics.
+    2. **Depth**: For Mindmaps, generate at least 4 levels of hierarchy (Root -> Main Branch -> Sub-branch -> Leaf Details).
+    3. **Quantity**: Aim for a high number of nodes (30+) to fully cover the subject.
+    4. **Details**: Populate the 'details' field for every node with specific attributes, examples, or data points.
+
+    Type Specific Rules:
+    - **Mindmap**: Central topic must branch into major categories, then into sub-categories, then into specific examples.
+    - **Flowchart**: Include all decision points (Yes/No), error handling steps, and specific process actions.
+    - **ERD**: Nodes must represent specific tables/entities. 'Details' field should list key attributes (PK, FK, etc).
+    - **Org Chart**: specific roles, not just departments.
+    
+    Return strictly JSON matching the schema.
   `;
 
   try {
@@ -104,23 +90,16 @@ export const generateDiagram = async (
       config: {
         responseMimeType: "application/json",
         responseSchema: graphSchema,
-        systemInstruction: "You are an expert Data Visualization Architect and Systems Engineer. You create structured, logical diagrams."
+        systemInstruction: "You are a meticulous Data Architect. You hate brevity. You love depth, nested structures, and comprehensive details. You always expand topics fully."
       }
     });
 
     if (response.text) {
-      try {
-        const cleanedText = cleanJsonString(response.text);
-        return JSON.parse(cleanedText) as GeneratedResponse;
-      } catch (e) {
-        console.error("JSON Parse Error. Raw text:", response.text);
-        throw new Error("AI returned invalid JSON format.");
-      }
+      return JSON.parse(response.text) as GeneratedResponse;
     }
     throw new Error("No content generated from Gemini.");
   } catch (error: any) {
-    console.error("Generation Error Details:", error);
-    // Pass the specific error message up
+    console.error("Generation Error:", error);
     throw new Error(error.message || "Unknown AI error");
   }
 };
@@ -134,7 +113,7 @@ export const updateDiagram = async (
   const ai = getAiClient();
   if (!ai) throw new Error("API Key missing");
 
-  // Simplify context to save tokens and focus on structure
+  // We send a simplified context but ask for a detailed update
   const simplifiedNodes = currentNodes.map(n => ({ id: n.id, label: n.data.label, details: n.data.details }));
   const simplifiedEdges = currentEdges.map(e => ({ source: e.source, target: e.target, label: e.label }));
   
@@ -150,10 +129,10 @@ export const updateDiagram = async (
 
     Instructions:
     1. Analyze the User Request and the Current Structure.
-    2. Return a FULL updated JSON structure (nodes and edges) that incorporates the changes.
-    3. You can add new nodes, remove nodes, rename nodes, or change connections.
-    4. PRESERVE existing IDs for nodes that haven't changed significantly to maintain continuity. Generate new IDs for new nodes.
-    5. Ensure the output matches the required schema.
+    2. Return a FULL updated JSON structure.
+    3. **Preserve Depth**: Do not simplify existing branches unless asked. 
+    4. **Add Detail**: If adding new nodes, ensure they are as detailed as the rest of the diagram.
+    5. PRESERVE existing IDs where possible.
   `;
 
   try {
@@ -163,13 +142,12 @@ export const updateDiagram = async (
       config: {
         responseMimeType: "application/json",
         responseSchema: graphSchema,
-        systemInstruction: "You are an intelligent diagram editor. You modify existing structures based on user intent while maintaining graph integrity."
+        systemInstruction: "You are an intelligent diagram editor. You modify existing structures based on user intent while maintaining graph integrity and depth."
       }
     });
 
     if (response.text) {
-      const cleanedText = cleanJsonString(response.text);
-      return JSON.parse(cleanedText) as GeneratedResponse;
+      return JSON.parse(response.text) as GeneratedResponse;
     }
     throw new Error("No update generated");
   } catch (error) {
@@ -191,26 +169,24 @@ export const drillDownNode = async (
     Current context of the diagram: ${currentContext}.
 
     Task:
-    1. Suggest 3-5 sub-components, child steps, or attributes related to "${nodeLabel}".
-    2. Return them as new nodes and edges connecting from the original node ("${nodeLabel}").
-    3. The 'source' of the new edges should be the ID of the parent node (but you might not know the ID, so assume the user will map it, or return the source label and we will map it. Actually, for this strict schema, generate new unique IDs for children).
+    1. Generate 8-12 granular sub-nodes related to "${nodeLabel}".
+    2. Include specific examples, attributes, or sub-process steps.
+    3. Return them as new nodes and edges connecting from "${nodeLabel}".
   `;
 
-  // Re-using graph schema but we interpret it as additive
   try {
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
-        responseSchema: graphSchema, // We use the same schema structure
-        systemInstruction: "You are an expert analyst expanding a diagram. Provide detailed sub-nodes."
+        responseSchema: graphSchema,
+        systemInstruction: "You are an expert analyst expanding a diagram. Provide highly detailed sub-nodes."
       }
     });
 
     if (response.text) {
-      const cleanedText = cleanJsonString(response.text);
-      const data = JSON.parse(cleanedText) as GeneratedResponse;
+      const data = JSON.parse(response.text) as GeneratedResponse;
       return {
         newNodes: data.nodes,
         newEdges: data.edges
@@ -228,9 +204,9 @@ export const getNodeDetails = async (nodeLabel: string, context: string): Promis
   if (!ai) return ["API Key missing. Cannot fetch details."];
 
   const prompt = `
-    Provide 3-4 detailed bullet points explaining the concept or step: "${nodeLabel}".
-    Context of the diagram: ${context}.
-    Keep it concise but informative.
+    Provide 5-7 detailed, actionable bullet points explaining: "${nodeLabel}".
+    Context: ${context}.
+    Include technical details, pros/cons, or specific data points where applicable.
   `;
 
   try {
@@ -252,8 +228,7 @@ export const getNodeDetails = async (nodeLabel: string, context: string): Promis
     });
 
     if (response.text) {
-        const cleanedText = cleanJsonString(response.text);
-        const res = JSON.parse(cleanedText);
+        const res = JSON.parse(response.text);
         return res.points || [];
     }
     return ["Could not generate details."];
