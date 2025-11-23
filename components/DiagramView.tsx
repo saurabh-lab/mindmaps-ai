@@ -113,6 +113,29 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
     setSelectedNode(null);
   };
 
+  // Styles helper for manual node addition
+  const getNewNodeStyle = () => {
+     if (diagramType === DiagramType.MINDMAP || diagramType === DiagramType.ORG_CHART) {
+        return {
+            background: 'transparent',
+            border: 'none',
+            borderRadius: '0',
+            boxShadow: 'none',
+            padding: '8px',
+            minWidth: 'auto',
+            fontWeight: '500',
+        };
+     }
+     return { 
+        background: '#fff', 
+        border: '1px solid #b1b1b7', 
+        borderRadius: '8px', 
+        padding: '10px',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+        minWidth: '100px'
+      };
+  };
+
   const handleAddNode = () => {
     const id = `manual-${Date.now()}`;
     const newNode: DiagramNode = {
@@ -120,14 +143,7 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
       position: { x: 100, y: 100 }, // Will be fixed if we re-layout, but for manual add, we keep it absolute
       data: { label: 'New Node' },
       type: 'default',
-      style: { 
-        background: '#fff', 
-        border: '1px solid #b1b1b7', 
-        borderRadius: '8px', 
-        padding: '10px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-        minWidth: '100px'
-      }
+      style: getNewNodeStyle()
     };
     setNodes((nds) => nds.concat(newNode));
   };
@@ -140,14 +156,7 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
       position: { x: selectedNode.position.x + 50, y: selectedNode.position.y + 100 },
       data: { label: 'New Child' },
       type: 'default',
-      style: { 
-        background: '#fff', 
-        border: '1px solid #b1b1b7', 
-        borderRadius: '8px', 
-        padding: '10px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-        minWidth: '100px'
-      }
+      style: getNewNodeStyle()
     };
     const newEdge: DiagramEdge = {
       id: `e-${selectedNode.id}-${id}`,
@@ -180,13 +189,7 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
         type: 'default',
         position: { x: 0, y: 0 }, 
         data: { label: n.label, details: n.details, type: n.type },
-        style: { 
-            background: '#fff', 
-            border: '1px solid #b1b1b7', 
-            borderRadius: '8px', 
-            padding: '10px',
-            minWidth: '120px'
-        }
+        style: getNewNodeStyle()
       }));
 
       const newEdges: DiagramEdge[] = newNodes.map((n) => ({
@@ -255,15 +258,32 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
         type: 'default',
         position: { x: 0, y: 0 }, // Layout will fix
         data: { label: n.label, details: n.details, type: n.type },
-        style: { 
-            background: '#fff', 
-            border: '1px solid #b1b1b7', 
-            borderRadius: '8px', 
-            padding: '10px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-            minWidth: '100px'
-        }
+        style: getNewNodeStyle()
       }));
+      
+      // We must check if the root node (index 0 usually) was re-generated and if it needs the Box style applied back
+      // Since updateDiagram might return a whole new set, we should ideally re-identify the root or apply styles based on structure.
+      // For simplicity, we assume the layout engine/app logic handles the special root style if passed through the main app flow, 
+      // but here we are in DiagramView. Let's just apply default "transparent" for Mindmaps, 
+      // AND loop to fix the root if it exists.
+      if (diagramType === DiagramType.MINDMAP && newNodes.length > 0) {
+          // Heuristic: The first node is often preserved as root in updates, or the one with 0 incoming.
+          // Since we apply layout next, let's let applyLayout handle position, but style is static.
+          // We'll leave them transparent here. If the user wants the root box back on a full re-gen, they use the Wizard.
+          // OR we can try to preserve the style of the node with the same ID as the old root.
+          const oldRoot = nodes[0];
+          const newRoot = newNodes.find(n => n.id === oldRoot.id) || newNodes[0];
+          if (newRoot) {
+             newRoot.style = {
+                 ...newRoot.style,
+                 backgroundColor: '#fff',
+                 border: '2px solid #3b82f6',
+                 borderRadius: '30px',
+                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                 padding: '16px 32px'
+             };
+          }
+      }
 
       const newEdges: DiagramEdge[] = result.edges.map((e, idx) => ({
         id: `e${idx}-${Date.now()}`, 

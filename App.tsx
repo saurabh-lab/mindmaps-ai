@@ -63,15 +63,16 @@ function App() {
         };
     }
 
-    // Mindmap Styling (Miro-like)
+    // Mindmap Styling (Transparent for branches, Root override handles itself later)
     if (diagramType === DiagramType.MINDMAP || diagramType === DiagramType.ORG_CHART) {
         return {
             ...baseStyle,
-            borderRadius: '30px', // Pill shape
-            border: '1px solid #e2e8f0', // Very subtle border
-            padding: '12px 24px',
+            background: 'transparent',
+            border: 'none',
+            borderRadius: '0',
+            boxShadow: 'none',
+            padding: '8px', // Minimal padding to allow selection but minimize clutter
             fontWeight: '500',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)', // Soft float
             minWidth: 'auto', // Let text define width
         };
     }
@@ -98,12 +99,14 @@ function App() {
         style: getNodeStyle(n.type, type)
       }));
 
-      // Special styling for Root node in Mindmaps
+      // Special styling for Root node in Mindmaps (Add Box Back)
       if (type === DiagramType.MINDMAP && nodes.length > 0) {
         nodes[0].style = {
             ...nodes[0].style,
             backgroundColor: '#fff',
             border: '2px solid #3b82f6',
+            borderRadius: '30px',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
             fontSize: '15px',
             fontWeight: '700',
             padding: '16px 32px'

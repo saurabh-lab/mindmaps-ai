@@ -246,17 +246,17 @@ const layoutMindmap = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
     // 6. Assign Handles (Source/Target Positions) based on location
     nodes.forEach(n => {
         if (n.id === root.id) {
-            // Root Node: Using Bottom source allows edges to curve to both left and right cleanly
-            // without crossing the text of the node itself.
-            n.sourcePosition = Position.Bottom;
-            n.targetPosition = Position.Top; // Or null practically
+            // Root Node: Using Right source to mimic "side" connections better than Bottom
+            n.sourcePosition = Position.Right;
+            n.targetPosition = Position.Left; 
         } else if (n.position.x > 0) {
             // Right Side: Incoming from Left, Outgoing to Right
             n.sourcePosition = Position.Right;
             n.targetPosition = Position.Left;
         } else if (n.position.x < 0) {
-            // Left Side: Incoming from Right, Outgoing to Left
+            // Left Side: Incoming from Right (Root), Outgoing to Left
             n.sourcePosition = Position.Left;
+            // Target is Right (facing the root on the right)
             n.targetPosition = Position.Right;
         } else {
              // Fallback for islands
