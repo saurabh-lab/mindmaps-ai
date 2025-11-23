@@ -11,6 +11,60 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [diagramData, setDiagramData] = useState<{ nodes: DiagramNode[]; edges: DiagramEdge[]; type: DiagramType } | null>(null);
 
+  const getNodeStyle = (type: string | undefined, diagramType: DiagramType) => {
+    const baseStyle = {
+        background: '#fff',
+        border: '1px solid #b1b1b7',
+        borderRadius: '8px',
+        padding: '10px',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+        minWidth: '100px',
+        fontSize: '12px',
+        textAlign: 'center' as const
+    };
+
+    if (diagramType === DiagramType.FLOWCHART) {
+        if (type?.toLowerCase().includes('decision')) {
+            return {
+                ...baseStyle,
+                background: '#fff0f0',
+                border: '2px solid #e53e3e',
+                borderRadius: '4px', 
+                transform: 'rotate(0deg)', // Keeping text straight, but visual difference via border
+                fontWeight: 'bold',
+                clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)', // CSS Diamond Shape
+                padding: '20px 10px', // More padding for diamond content
+                width: '120px',
+                height: '80px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+            };
+        }
+        if (type?.toLowerCase().includes('start') || type?.toLowerCase().includes('end')) {
+            return { ...baseStyle, borderRadius: '20px', background: '#f0fff4', border: '2px solid #38a169', fontWeight: 'bold' };
+        }
+        // Process nodes
+        return { ...baseStyle, borderRadius: '2px', border: '1px solid #3182ce' };
+    }
+
+    if (diagramType === DiagramType.ERD) {
+        return {
+            ...baseStyle,
+            borderRadius: '0px',
+            border: '1px solid #4a5568',
+            borderTop: '4px solid #4a5568', // Header look
+            background: '#f7fafc',
+            boxShadow: '2px 2px 0px rgba(0,0,0,0.1)',
+            textAlign: 'left' as const,
+            padding: '8px 12px'
+        };
+    }
+
+    // Mindmap levels styling could go here
+    return baseStyle;
+  };
+
   const handleWizardSubmit = async (type: DiagramType, description: string, layout: LayoutStyle, additionalData: string) => {
     setLoading(true);
     try {
@@ -19,17 +73,10 @@ function App() {
       // Transform API response to React Flow format
       const nodes: DiagramNode[] = rawData.nodes.map(n => ({
         id: n.id,
-        type: 'default', // can customize based on n.type
+        type: 'default', 
         position: { x: 0, y: 0 }, // layout engine will fix this
         data: { label: n.label, details: n.details, type: n.type },
-        style: { 
-            background: '#fff', 
-            border: '1px solid #b1b1b7', 
-            borderRadius: '8px', 
-            padding: '10px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-            minWidth: '100px'
-        }
+        style: getNodeStyle(n.type, type)
       }));
 
       const edges: DiagramEdge[] = rawData.edges.map((e, idx) => ({
@@ -37,15 +84,16 @@ function App() {
         source: e.source,
         target: e.target,
         label: e.label,
-        type: 'smoothstep',
+        type: type === DiagramType.FLOWCHART ? 'step' : 'smoothstep', // Step edges for flowcharts look better
         markerEnd: {
             type: MarkerType.ArrowClosed,
         },
         animated: true,
+        style: { stroke: '#555', strokeWidth: 1.5 }
       }));
 
-      // Apply Layout Algorithm
-      const layoutedData = applyLayout(nodes, edges, layout);
+      // Apply Layout Algorithm with Diagram Type awareness
+      const layoutedData = applyLayout(nodes, edges, layout, type);
 
       setDiagramData({
         nodes: layoutedData.nodes,
@@ -54,7 +102,6 @@ function App() {
       });
       setView('diagram');
     } catch (error: any) {
-      // Show the actual error message so the user knows if it's an API key issue
       const msg = error instanceof Error ? error.message : String(error);
       alert(`Failed to generate diagram: ${msg}`);
       console.error("App Error:", error);

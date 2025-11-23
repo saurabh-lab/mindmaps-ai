@@ -111,7 +111,7 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
     const id = `manual-${Date.now()}`;
     const newNode: DiagramNode = {
       id,
-      position: { x: 100, y: 100 },
+      position: { x: 100, y: 100 }, // Will be fixed if we re-layout, but for manual add, we keep it absolute
       data: { label: 'New Node' },
       type: 'default',
       style: { 
@@ -165,16 +165,19 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
 
       const result = await drillDownNode(label, context, diagramType);
 
-      const parentPos = selectedNode.position;
+      // 1. Create new nodes and edges
       const newNodes: DiagramNode[] = result.newNodes.map((n, idx) => ({
         id: `gen-${Date.now()}-${idx}`,
         type: 'default',
-        position: { 
-            x: parentPos.x + (Math.random() * 200 - 100), 
-            y: parentPos.y + 150 + (idx * 50) 
-        },
-        data: { label: n.label, details: n.details },
-        style: { background: '#fff', border: '1px solid #777', borderRadius: '8px', padding: '10px' }
+        position: { x: 0, y: 0 }, // Layout will fix this
+        data: { label: n.label, details: n.details, type: n.type },
+        style: { 
+            background: '#fff', 
+            border: '1px solid #b1b1b7', 
+            borderRadius: '8px', 
+            padding: '10px',
+            minWidth: '120px'
+        }
       }));
 
       const newEdges: DiagramEdge[] = newNodes.map((n) => ({
@@ -186,10 +189,23 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
         animated: true,
       }));
 
-      setNodes((nds) => [...nds, ...newNodes]);
-      setEdges((eds) => [...eds, ...newEdges]);
+      // 2. Merge with existing
+      const allNodes = [...nodes, ...newNodes];
+      const allEdges = [...edges, ...newEdges];
+
+      // 3. RE-APPLY LAYOUT to ensure quality is maintained
+      // We determine style based on diagram type
+      let layoutStyle = LayoutStyle.TREE;
+      if (diagramType === DiagramType.MINDMAP) layoutStyle = LayoutStyle.RADIAL;
+      
+      // Use the robust layout engine
+      const layouted = applyLayout(allNodes, allEdges, layoutStyle, diagramType);
+
+      setNodes(layouted.nodes);
+      setEdges(layouted.edges);
 
     } catch (e) {
+      console.error(e);
       alert("Failed to drill down. Try again.");
     } finally {
       setLoadingAction(null);
@@ -226,7 +242,7 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
       const newNodes: DiagramNode[] = result.nodes.map(n => ({
         id: n.id,
         type: 'default',
-        position: { x: 0, y: 0 }, // Will be fixed by layout
+        position: { x: 0, y: 0 }, // Layout will fix
         data: { label: n.label, details: n.details, type: n.type },
         style: { 
             background: '#fff', 
@@ -248,10 +264,11 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
         animated: true,
       }));
 
-      // Re-apply layout
-      // We default to Tree for auto-updates as it's the most stable, unless it's radial
-      const layoutStyle = diagramType === DiagramType.MINDMAP ? LayoutStyle.RADIAL : LayoutStyle.TREE;
-      const layouted = applyLayout(newNodes, newEdges, layoutStyle);
+      // Re-apply layout on the WHOLE graph
+      let layoutStyle = LayoutStyle.TREE;
+      if (diagramType === DiagramType.MINDMAP) layoutStyle = LayoutStyle.RADIAL;
+
+      const layouted = applyLayout(newNodes, newEdges, layoutStyle, diagramType);
 
       setNodes(layouted.nodes);
       setEdges(layouted.edges);

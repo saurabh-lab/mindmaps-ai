@@ -1,118 +1,196 @@
-import { DiagramNode, DiagramEdge, LayoutStyle } from '../types';
+import { DiagramNode, DiagramEdge, LayoutStyle, DiagramType } from '../types';
 
-// Basic Layout Engine to avoid heavy heavy dependencies like Dagre/Elk in this environment
-// In a real prod app, use 'dagre' or 'elkjs'
+// Constants for layout spacing
+const NODE_WIDTH = 180;
+const NODE_HEIGHT = 100;
+const X_SPACING = 50;
+const Y_SPACING = 100;
 
 export const applyLayout = (
   nodes: DiagramNode[],
   edges: DiagramEdge[],
-  style: LayoutStyle
+  style: LayoutStyle,
+  diagramType: DiagramType
 ): { nodes: DiagramNode[]; edges: DiagramEdge[] } => {
+
+  // Clone to avoid mutation issues
+  const newNodes = nodes.map(n => ({ ...n }));
   
-  // Reset positions if needed or calculating from scratch
-  // We identify the "root" or start nodes (nodes with no incoming edges)
-  const nodeIds = new Set(nodes.map(n => n.id));
-  const targetIds = new Set(edges.map(e => e.target));
-  const roots = nodes.filter(n => !targetIds.has(n.id));
-  
-  // If no clear root (circular), pick the first one
-  const startNodes = roots.length > 0 ? roots : [nodes[0]];
-  
-  const newNodes = [...nodes];
-  
-  if (style === LayoutStyle.RADIAL || style === LayoutStyle.CIRCULAR) {
-    layoutRadial(newNodes, edges, startNodes[0]?.id);
+  // Select layout strategy based on Diagram Type and User Preference
+  if (diagramType === DiagramType.MINDMAP && style === LayoutStyle.RADIAL) {
+     layoutRadial(newNodes, edges);
+  } else if (diagramType === DiagramType.FLOWCHART) {
+     layoutLayered(newNodes, edges, 'TB'); // Top-to-Bottom for Flowcharts
+  } else if (diagramType === DiagramType.ERD) {
+     layoutGrid(newNodes, edges); // Grid/Forest for ERD
   } else {
-    // Default to Tree/Hierarchical
-    layoutTree(newNodes, edges, startNodes);
+     // Default Tree/Hierarchical
+     layoutLayered(newNodes, edges, 'LR'); // Left-to-Right for Mindmaps/Org Charts by default
   }
 
   return { nodes: newNodes, edges };
 };
 
-const layoutTree = (nodes: DiagramNode[], edges: DiagramEdge[], roots: DiagramNode[]) => {
-  const NODE_WIDTH = 180;
-  const NODE_HEIGHT = 80;
-  const LEVEL_HEIGHT = 150;
+/**
+ * Layered Layout (Sugiyama-lite)
+ * Good for Flowcharts (TB) and Mindmaps/OrgCharts (LR)
+ * Handles disconnected graphs (forests).
+ */
+const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'TB' | 'LR') => {
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const targets = new Set(edges.map(e => e.target));
+  
+  // 1. Identify Roots (nodes with no incoming edges)
+  // If a circular dependency exists, we might have no roots. Fallback to first node.
+  let roots = nodes.filter(n => !targets.has(n.id));
+  if (roots.length === 0 && nodes.length > 0) roots = [nodes[0]];
 
   const levels: Record<string, number> = {};
   const visited = new Set<string>();
-
-  // BFS to determine levels
+  
+  // 2. BFS to assign levels (ranks)
   const queue: { id: string; level: number }[] = roots.map(r => ({ id: r.id, level: 0 }));
   
-  while (queue.length > 0) {
-    const item = queue.shift()!;
-    if (visited.has(item.id)) continue;
-    visited.add(item.id);
-    levels[item.id] = item.level;
+  // Handle disconnected components by ensuring all nodes are visited
+  let unvisited = new Set(nodes.map(n => n.id));
+  
+  while (unvisited.size > 0) {
+    if (queue.length === 0) {
+      // Pick an unvisited node to start a new tree/cluster
+      const nextId = unvisited.values().next().value!;
+      queue.push({ id: nextId, level: 0 });
+    }
 
-    const children = edges
-      .filter(e => e.source === item.id)
-      .map(e => e.target);
+    const { id, level } = queue.shift()!;
+    if (visited.has(id)) continue;
     
+    visited.add(id);
+    unvisited.delete(id);
+    levels[id] = level;
+
+    // Find children
+    const children = edges.filter(e => e.source === id).map(e => e.target);
     children.forEach(childId => {
-      queue.push({ id: childId, level: item.level + 1 });
+      queue.push({ id: childId, level: level + 1 });
     });
   }
 
-  // Group by level
+  // 3. Group nodes by level
   const nodesByLevel: Record<number, DiagramNode[]> = {};
+  let maxLevel = 0;
+  
   nodes.forEach(node => {
     const level = levels[node.id] ?? 0;
+    maxLevel = Math.max(maxLevel, level);
     if (!nodesByLevel[level]) nodesByLevel[level] = [];
     nodesByLevel[level].push(node);
   });
 
-  // Assign X, Y
+  // 4. Position Nodes
+  // We center align parents relative to children roughly by just centering the row
   Object.keys(nodesByLevel).forEach(levelStr => {
     const level = parseInt(levelStr);
     const levelNodes = nodesByLevel[level];
-    const totalWidth = levelNodes.length * NODE_WIDTH;
-    const startX = -(totalWidth / 2);
+    
+    // Calculate Row Width
+    const rowWidth = levelNodes.length * NODE_WIDTH + (levelNodes.length - 1) * X_SPACING;
+    const startX = -(rowWidth / 2);
 
     levelNodes.forEach((node, index) => {
-      node.position = {
-        x: startX + index * NODE_WIDTH,
-        y: level * LEVEL_HEIGHT
-      };
+      if (direction === 'TB') {
+        // Top to Bottom (Flowchart)
+        node.position = {
+          x: startX + index * (NODE_WIDTH + X_SPACING),
+          y: level * (NODE_HEIGHT + Y_SPACING)
+        };
+      } else {
+        // Left to Right (Mindmap)
+        node.position = {
+          x: level * (NODE_WIDTH + Y_SPACING), // Swap spacing for LR
+          y: startX + index * (NODE_HEIGHT - 40) // Tighter vertical packing for mindmaps
+        };
+      }
     });
   });
 };
 
-const layoutRadial = (nodes: DiagramNode[], edges: DiagramEdge[], centerId: string) => {
-  const RADIUS_INCREMENT = 250;
-  const centerNode = nodes.find(n => n.id === centerId);
-  
-  if (centerNode) {
-    centerNode.position = { x: 0, y: 0 };
+/**
+ * Grid Layout for ERDs
+ * Organizes disconnected entities into a neat grid to avoid overlap
+ */
+const layoutGrid = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
+  // Simple grid packing
+  const cols = Math.ceil(Math.sqrt(nodes.length));
+  const spacingX = 250;
+  const spacingY = 200;
+
+  nodes.forEach((node, index) => {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+
+    node.position = {
+      x: col * spacingX,
+      y: row * spacingY
+    };
+  });
+};
+
+/**
+ * Radial Layout for Mindmaps
+ */
+const layoutRadial = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
+  if (nodes.length === 0) return;
+
+  // Find center (root)
+  const targets = new Set(edges.map(e => e.target));
+  const roots = nodes.filter(n => !targets.has(n.id));
+  const centerNode = roots.length > 0 ? roots[0] : nodes[0];
+
+  const visited = new Set<string>();
+  const queue: { id: string; level: number; angleStart: number; angleEnd: number }[] = [
+    { id: centerNode.id, level: 0, angleStart: 0, angleEnd: 2 * Math.PI }
+  ];
+
+  // Assign basic positions
+  while (queue.length > 0) {
+    const { id, level, angleStart, angleEnd } = queue.shift()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
+
+    const node = nodes.find(n => n.id === id);
+    if (!node) continue;
+
+    if (level === 0) {
+      node.position = { x: 0, y: 0 };
+    } else {
+      const radius = level * 250;
+      const angle = (angleStart + angleEnd) / 2;
+      node.position = {
+        x: radius * Math.cos(angle),
+        y: radius * Math.sin(angle)
+      };
+    }
+
+    const children = edges.filter(e => e.source === id).map(e => e.target);
+    if (children.length > 0) {
+      const angleStep = (angleEnd - angleStart) / children.length;
+      children.forEach((childId, idx) => {
+        queue.push({
+          id: childId,
+          level: level + 1,
+          angleStart: angleStart + idx * angleStep,
+          angleEnd: angleStart + (idx + 1) * angleStep
+        });
+      });
+    }
   }
 
-  const visited = new Set<string>([centerId]);
-  let currentLevelNodes = edges.filter(e => e.source === centerId).map(e => e.target);
-  let radius = RADIUS_INCREMENT;
-
-  while (currentLevelNodes.length > 0) {
-    const angleStep = (2 * Math.PI) / currentLevelNodes.length;
-    const nextLevelNodes: string[] = [];
-
-    currentLevelNodes.forEach((nodeId, index) => {
-      if (visited.has(nodeId)) return;
-      visited.add(nodeId);
-
-      const node = nodes.find(n => n.id === nodeId);
-      if (node) {
-        node.position = {
-          x: radius * Math.cos(index * angleStep),
-          y: radius * Math.sin(index * angleStep)
-        };
-      }
-
-      const children = edges.filter(e => e.source === nodeId).map(e => e.target);
-      nextLevelNodes.push(...children);
-    });
-
-    currentLevelNodes = nextLevelNodes;
-    radius += RADIUS_INCREMENT;
-  }
+  // Handle disconnected nodes in radial mode (put them in a list on the side)
+  const unvisited = nodes.filter(n => !visited.has(n.id));
+  unvisited.forEach((node, idx) => {
+    node.position = {
+      x: -400,
+      y: idx * 100
+    };
+  });
 };
