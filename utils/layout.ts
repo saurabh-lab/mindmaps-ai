@@ -1,9 +1,10 @@
 import { DiagramNode, DiagramEdge, LayoutStyle, DiagramType } from '../types';
-import { MarkerType } from 'reactflow';
 
 // Constants for layout spacing
-const X_SPACING = 300; // Wide spacing to prevent text overlap
-const Y_SPACING = 150; 
+const MINDMAP_H_SPACING = 250; // Horizontal reach for branches
+const MINDMAP_NODE_HEIGHT_SLOT = 60; // Base height slot per node
+const LAYERED_X_SPACING = 200; // Flowchart Horizontal
+const LAYERED_Y_SPACING = 100; // Flowchart Vertical
 
 // Professional Palette for branches
 const BRANCH_COLORS = [
@@ -31,20 +32,17 @@ export const applyLayout = (
   let newEdges = edges.map(e => ({ ...e }));
   
   // 1. Apply Positioning
-  if (diagramType === DiagramType.MINDMAP && style === LayoutStyle.RADIAL) {
-     layoutRadial(newNodes, newEdges);
+  if (diagramType === DiagramType.MINDMAP) {
+     layoutMindmap(newNodes, newEdges);
   } else if (diagramType === DiagramType.ERD) {
      layoutGrid(newNodes, newEdges);
   } else {
-     // Flowcharts, Org Charts, and Tree-like Mindmaps
-     // Use TB for Flowcharts/OrgCharts, LR for Mindmaps
-     const direction = (diagramType === DiagramType.MINDMAP) ? 'LR' : 'TB';
+     // Flowcharts, Org Charts
+     const direction = (style === LayoutStyle.RADIAL) ? 'LR' : 'TB';
      layoutLayered(newNodes, newEdges, direction);
   }
 
   // 2. Apply Branch Coloring & Style
-  // For Mindmaps/Org Charts, we want colorful branches.
-  // For Flowcharts/ERDs, we want professional neutral lines.
   if (diagramType === DiagramType.MINDMAP || diagramType === DiagramType.ORG_CHART) {
     newEdges = assignBranchColors(newNodes, newEdges);
   } else {
@@ -64,9 +62,6 @@ export const applyLayout = (
 const assignBranchColors = (nodes: DiagramNode[], edges: DiagramEdge[]): DiagramEdge[] => {
     if (nodes.length === 0) return edges;
 
-    const edgeMap = new Map<string, DiagramEdge>();
-    edges.forEach(e => edgeMap.set(e.id, e));
-
     const adj = new Map<string, string[]>();
     edges.forEach(e => {
         if (!adj.has(e.source)) adj.set(e.source, []);
@@ -78,7 +73,7 @@ const assignBranchColors = (nodes: DiagramNode[], edges: DiagramEdge[]): Diagram
     edges.forEach(e => incomingCount.set(e.target, (incomingCount.get(e.target) || 0) + 1));
     
     let root = nodes.find(n => (incomingCount.get(n.id) || 0) === 0);
-    if (!root && nodes.length > 0) root = nodes[0]; // Fallback for circular
+    if (!root && nodes.length > 0) root = nodes[0];
 
     if (!root) return edges;
 
@@ -125,17 +120,130 @@ const assignBranchColors = (nodes: DiagramNode[], edges: DiagramEdge[]): Diagram
     return edges;
 };
 
-// Fallback for individual edge creation without layout
 export const getEdgeColor = (sourceId: string, diagramType: DiagramType): string => {
   if (diagramType === DiagramType.FLOWCHART || diagramType === DiagramType.ERD) {
     return '#64748b';
   }
-  // This is just a fallback; the layout engine does the real work
   return '#2563eb'; 
 };
 
 /**
- * Improved Layered Layout (Sugiyama-lite)
+ * Balanced Horizontal Tree Layout (Miro-style)
+ */
+const layoutMindmap = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
+    if (nodes.length === 0) return;
+
+    // 1. Build Adjacency List
+    const adj = new Map<string, string[]>();
+    edges.forEach(e => {
+        if (!adj.has(e.source)) adj.set(e.source, []);
+        adj.get(e.source)?.push(e.target);
+    });
+
+    // 2. Find Root
+    const incoming = new Set(edges.map(e => e.target));
+    const root = nodes.find(n => !incoming.has(n.id)) || nodes[0];
+
+    // 3. Compute Subtree Sizes
+    // We map each node to the vertical space it requires (height)
+    const nodeData = new Map<string, { height: number }>();
+    const visited = new Set<string>(); // Prevent cycles
+
+    const calculateSubtreeHeight = (nodeId: string): number => {
+        if (visited.has(nodeId)) return MINDMAP_NODE_HEIGHT_SLOT;
+        visited.add(nodeId);
+
+        const children = adj.get(nodeId) || [];
+        if (children.length === 0) {
+            const h = MINDMAP_NODE_HEIGHT_SLOT;
+            nodeData.set(nodeId, { height: h });
+            return h;
+        }
+
+        let totalHeight = 0;
+        children.forEach(childId => {
+            totalHeight += calculateSubtreeHeight(childId);
+        });
+
+        nodeData.set(nodeId, { height: totalHeight });
+        return totalHeight;
+    };
+
+    calculateSubtreeHeight(root.id);
+
+    // 4. Position Nodes
+    const positioned = new Set<string>();
+    
+    // Recursive placement function
+    const placeNode = (nodeId: string, x: number, y: number, direction: 1 | -1) => {
+        const node = nodes.find(n => n.id === nodeId);
+        if (node) {
+            node.position = { x, y };
+        }
+        positioned.add(nodeId);
+
+        const children = adj.get(nodeId) || [];
+        if (children.length === 0) return;
+
+        // Calculate starting Y for children to be centered relative to parent
+        // The children block starts at: CurrentY - (TotalChildrenHeight / 2)
+        const childrenTotalHeight = children.reduce((acc, cid) => acc + (nodeData.get(cid)?.height || MINDMAP_NODE_HEIGHT_SLOT), 0);
+        let currentChildY = y - (childrenTotalHeight / 2);
+
+        children.forEach(childId => {
+            const childHeight = nodeData.get(childId)?.height || MINDMAP_NODE_HEIGHT_SLOT;
+            const childCenterY = currentChildY + (childHeight / 2);
+            
+            // X offset is constant spacing
+            const childX = x + (direction * MINDMAP_H_SPACING);
+
+            if (!positioned.has(childId)) {
+                placeNode(childId, childX, childCenterY, direction);
+            }
+            
+            currentChildY += childHeight;
+        });
+    };
+
+    // 5. Layout Root and Split Level 1 Children
+    root.position = { x: 0, y: 0 };
+    positioned.add(root.id);
+
+    const rootChildren = adj.get(root.id) || [];
+    
+    // Split alternatingly to balance
+    const rightChildren = rootChildren.filter((_, i) => i % 2 === 0);
+    const leftChildren = rootChildren.filter((_, i) => i % 2 !== 0);
+
+    // Calculate total heights for the main branches to center them on the root
+    const rightTotal = rightChildren.reduce((acc, id) => acc + (nodeData.get(id)?.height || 0), 0);
+    const leftTotal = leftChildren.reduce((acc, id) => acc + (nodeData.get(id)?.height || 0), 0);
+
+    // Place Right Branch
+    let currentY = -(rightTotal / 2);
+    rightChildren.forEach(childId => {
+        const h = nodeData.get(childId)?.height || MINDMAP_NODE_HEIGHT_SLOT;
+        placeNode(childId, MINDMAP_H_SPACING, currentY + (h/2), 1);
+        currentY += h;
+    });
+
+    // Place Left Branch
+    currentY = -(leftTotal / 2);
+    leftChildren.forEach(childId => {
+        const h = nodeData.get(childId)?.height || MINDMAP_NODE_HEIGHT_SLOT;
+        placeNode(childId, -MINDMAP_H_SPACING, currentY + (h/2), -1);
+        currentY += h;
+    });
+
+    // Handle any disconnected nodes (islands)
+    const unpositioned = nodes.filter(n => !positioned.has(n.id));
+    unpositioned.forEach((n, i) => {
+        n.position = { x: 0, y: (rootChildren.length * 100) + (i * 100) };
+    });
+};
+
+/**
+ * Improved Layered Layout (Sugiyama-lite) for Flowcharts
  */
 const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'TB' | 'LR') => {
   if (nodes.length === 0) return;
@@ -187,20 +295,18 @@ const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'T
     
     layerNodes.forEach((node, idx) => {
       if (direction === 'TB') {
-        // Center the layer
-        const width = (layerSize - 1) * X_SPACING;
+        const width = (layerSize - 1) * LAYERED_X_SPACING;
         const xOffset = -(width / 2);
         node.position = {
-          x: xOffset + idx * X_SPACING,
-          y: r * Y_SPACING
+          x: xOffset + idx * LAYERED_X_SPACING,
+          y: r * LAYERED_Y_SPACING
         };
       } else {
-        // LR Layout
-        const height = (layerSize - 1) * 120;
+        const height = (layerSize - 1) * 100;
         const yOffset = -(height / 2);
         node.position = {
-          x: r * 350,
-          y: yOffset + idx * 120
+          x: r * 300,
+          y: yOffset + idx * 100
         };
       }
     });
@@ -212,8 +318,8 @@ const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'T
  */
 const layoutGrid = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
   const cols = Math.ceil(Math.sqrt(nodes.length));
-  const spacingX = 350;
-  const spacingY = 250;
+  const spacingX = 300;
+  const spacingY = 200;
 
   nodes.forEach((node, index) => {
     const col = index % cols;
@@ -222,58 +328,5 @@ const layoutGrid = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
       x: col * spacingX,
       y: row * spacingY
     };
-  });
-};
-
-/**
- * Radial Layout for Mindmaps
- */
-const layoutRadial = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
-  if (nodes.length === 0) return;
-
-  const incoming = new Set(edges.map(e => e.target));
-  let center = nodes.find(n => !incoming.has(n.id)) || nodes[0];
-  
-  const visited = new Set<string>();
-  visited.add(center.id);
-  center.position = { x: 0, y: 0 };
-  
-  const layoutChildren = (parentId: string, startAngle: number, endAngle: number, level: number) => {
-      const children = edges
-        .filter(e => e.source === parentId)
-        .map(e => nodes.find(n => n.id === e.target))
-        .filter((n): n is DiagramNode => !!n && !visited.has(n.id));
-
-      if (children.length === 0) return;
-
-      const totalSector = endAngle - startAngle;
-      const sectorPerChild = totalSector / children.length;
-
-      children.forEach((child, idx) => {
-          visited.add(child.id);
-          // Center the angle in the sector
-          const angle = startAngle + (sectorPerChild * idx) + (sectorPerChild / 2);
-          const radius = level * 350; // Increased radius for better separation
-
-          child.position = {
-              x: radius * Math.cos(angle),
-              y: radius * Math.sin(angle)
-          };
-          
-          layoutChildren(
-            child.id, 
-            startAngle + (sectorPerChild * idx), 
-            startAngle + (sectorPerChild * (idx + 1)), 
-            level + 1
-          );
-      });
-  };
-
-  layoutChildren(center.id, 0, 2 * Math.PI, 1);
-
-  // Handle disconnected islands
-  const unvisited = nodes.filter(n => !visited.has(n.id));
-  unvisited.forEach((n, i) => {
-      n.position = { x: -600, y: i * 200 };
   });
 };

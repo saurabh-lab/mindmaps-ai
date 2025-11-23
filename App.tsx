@@ -14,13 +14,15 @@ function App() {
   const getNodeStyle = (type: string | undefined, diagramType: DiagramType) => {
     const baseStyle = {
         background: '#fff',
-        border: '1px solid #b1b1b7',
+        border: '1px solid #cbd5e1', // Slate-300
         borderRadius: '8px',
-        padding: '10px',
-        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+        padding: '10px 14px',
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
         minWidth: '120px',
-        fontSize: '12px',
-        textAlign: 'center' as const
+        fontSize: '13px',
+        color: '#1e293b',
+        textAlign: 'center' as const,
+        fontFamily: "'Inter', sans-serif"
     };
 
     if (diagramType === DiagramType.FLOWCHART) {
@@ -31,41 +33,46 @@ function App() {
                 border: '2px solid #e53e3e',
                 borderRadius: '4px', 
                 transform: 'rotate(0deg)', 
-                fontWeight: 'bold',
+                fontWeight: '600',
                 clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)', 
                 padding: '24px 12px', 
                 width: '140px',
                 height: '90px',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                boxShadow: 'none'
             };
         }
         if (type?.toLowerCase().includes('start') || type?.toLowerCase().includes('end')) {
-            return { ...baseStyle, borderRadius: '25px', background: '#f0fff4', border: '2px solid #38a169', fontWeight: 'bold' };
+            return { ...baseStyle, borderRadius: '25px', background: '#f0fff4', border: '2px solid #38a169', fontWeight: '600' };
         }
-        return { ...baseStyle, borderRadius: '4px', border: '1px solid #3182ce' };
+        return { ...baseStyle, borderRadius: '4px', border: '1px solid #3b82f6' };
     }
 
     if (diagramType === DiagramType.ERD) {
         return {
             ...baseStyle,
             borderRadius: '0px',
-            border: '1px solid #4a5568',
-            borderTop: '4px solid #4a5568', // Header look
-            background: '#f7fafc',
+            border: '1px solid #475569',
+            borderTop: '4px solid #475569',
+            background: '#f8fafc',
             boxShadow: '4px 4px 0px rgba(0,0,0,0.1)',
             textAlign: 'left' as const,
-            padding: '8px 12px'
+            padding: '12px'
         };
     }
 
-    // Mindmap Styling
-    if (diagramType === DiagramType.MINDMAP) {
+    // Mindmap Styling (Miro-like)
+    if (diagramType === DiagramType.MINDMAP || diagramType === DiagramType.ORG_CHART) {
         return {
             ...baseStyle,
-            borderRadius: '12px',
-            borderWidth: '2px'
+            borderRadius: '30px', // Pill shape
+            border: '1px solid #e2e8f0', // Very subtle border
+            padding: '12px 24px',
+            fontWeight: '500',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.08)', // Soft float
+            minWidth: 'auto', // Let text define width
         };
     }
 
@@ -77,7 +84,7 @@ function App() {
     try {
       const rawData = await generateDiagram(type, description, layout, additionalData);
       
-      // Determine Edge Type: 'default' (Bezier) for Mindmaps, 'smoothstep' for others
+      // Determine Edge Type: 'default' (Bezier) for Mindmaps for organic look, 'smoothstep' for technical diagrams
       const edgeType = (type === DiagramType.MINDMAP || type === DiagramType.ORG_CHART) 
           ? 'default' 
           : 'smoothstep';
@@ -91,6 +98,18 @@ function App() {
         style: getNodeStyle(n.type, type)
       }));
 
+      // Special styling for Root node in Mindmaps
+      if (type === DiagramType.MINDMAP && nodes.length > 0) {
+        nodes[0].style = {
+            ...nodes[0].style,
+            backgroundColor: '#fff',
+            border: '2px solid #3b82f6',
+            fontSize: '15px',
+            fontWeight: '700',
+            padding: '16px 32px'
+        };
+      }
+
       const edges: DiagramEdge[] = rawData.edges.map((e, idx) => ({
         id: `e${idx}`,
         source: e.source,
@@ -100,8 +119,8 @@ function App() {
         markerEnd: {
             type: MarkerType.ArrowClosed,
         },
-        animated: false, // Ensure static lines
-        style: { strokeWidth: 2 } // Layout will assign colors
+        animated: false,
+        style: { strokeWidth: 2 } 
       }));
 
       // Apply Layout & Coloring
