@@ -1,10 +1,23 @@
 import { DiagramNode, DiagramEdge, LayoutStyle, DiagramType } from '../types';
+import { MarkerType } from 'reactflow';
 
 // Constants for layout spacing
-const NODE_WIDTH = 200; // Slightly wider for ERD/Flowchart nodes
-const NODE_HEIGHT = 100;
-const X_SPACING = 250; // Increased horizontal spacing
-const Y_SPACING = 150; // Increased vertical spacing
+const X_SPACING = 300; // Wide spacing to prevent text overlap
+const Y_SPACING = 150; 
+
+// Professional Palette for branches
+const BRANCH_COLORS = [
+  '#2563eb', // Blue
+  '#db2777', // Pink
+  '#d97706', // Amber
+  '#16a34a', // Green
+  '#7c3aed', // Violet
+  '#0891b2', // Cyan
+  '#dc2626', // Red
+  '#4f46e5', // Indigo
+  '#be185d', // Rose
+  '#059669', // Emerald
+];
 
 export const applyLayout = (
   nodes: DiagramNode[],
@@ -15,69 +28,127 @@ export const applyLayout = (
 
   // Clone to avoid mutation issues
   const newNodes = nodes.map(n => ({ ...n }));
+  let newEdges = edges.map(e => ({ ...e }));
   
+  // 1. Apply Positioning
   if (diagramType === DiagramType.MINDMAP && style === LayoutStyle.RADIAL) {
-     layoutRadial(newNodes, edges);
+     layoutRadial(newNodes, newEdges);
   } else if (diagramType === DiagramType.ERD) {
-     layoutGrid(newNodes, edges);
+     layoutGrid(newNodes, newEdges);
   } else {
      // Flowcharts, Org Charts, and Tree-like Mindmaps
      // Use TB for Flowcharts/OrgCharts, LR for Mindmaps
      const direction = (diagramType === DiagramType.MINDMAP) ? 'LR' : 'TB';
-     layoutLayered(newNodes, edges, direction);
+     layoutLayered(newNodes, newEdges, direction);
   }
 
-  return { nodes: newNodes, edges };
+  // 2. Apply Branch Coloring & Style
+  // For Mindmaps/Org Charts, we want colorful branches.
+  // For Flowcharts/ERDs, we want professional neutral lines.
+  if (diagramType === DiagramType.MINDMAP || diagramType === DiagramType.ORG_CHART) {
+    newEdges = assignBranchColors(newNodes, newEdges);
+  } else {
+    // Uniform professional style for Flowchart/ERD
+    newEdges.forEach(e => {
+        e.style = { ...e.style, stroke: '#64748b', strokeWidth: 2 };
+        e.animated = false;
+    });
+  }
+
+  return { nodes: newNodes, edges: newEdges };
 };
 
-export const getEdgeColor = (sourceId: string, diagramType: DiagramType): string => {
-  // Professional look for Flowcharts/ERDs
-  if (diagramType === DiagramType.FLOWCHART || diagramType === DiagramType.ERD) {
-    return '#64748b'; // slate-500
-  }
+/**
+ * Propagates colors from root's children down to leaves.
+ */
+const assignBranchColors = (nodes: DiagramNode[], edges: DiagramEdge[]): DiagramEdge[] => {
+    if (nodes.length === 0) return edges;
 
-  // Colorful branches for Mindmaps/OrgCharts
-  const colors = [
-    '#2563eb', // blue-600
-    '#db2777', // pink-600
-    '#d97706', // amber-600
-    '#16a34a', // green-600
-    '#9333ea', // purple-600
-    '#0891b2', // cyan-600
-    '#dc2626', // red-600
-    '#4f46e5', // indigo-600
-  ];
-  
-  let hash = 0;
-  for (let i = 0; i < sourceId.length; i++) {
-    hash = sourceId.charCodeAt(i) + ((hash << 5) - hash);
+    const edgeMap = new Map<string, DiagramEdge>();
+    edges.forEach(e => edgeMap.set(e.id, e));
+
+    const adj = new Map<string, string[]>();
+    edges.forEach(e => {
+        if (!adj.has(e.source)) adj.set(e.source, []);
+        adj.get(e.source)?.push(e.target);
+    });
+
+    // Find Root (node with 0 incoming edges, or the first one)
+    const incomingCount = new Map<string, number>();
+    edges.forEach(e => incomingCount.set(e.target, (incomingCount.get(e.target) || 0) + 1));
+    
+    let root = nodes.find(n => (incomingCount.get(n.id) || 0) === 0);
+    if (!root && nodes.length > 0) root = nodes[0]; // Fallback for circular
+
+    if (!root) return edges;
+
+    const branchColors = new Map<string, string>(); // NodeID -> Color
+
+    // BFS to assign colors
+    const queue: { id: string; color?: string }[] = [];
+    
+    // Initialize root's children with distinct colors
+    const rootChildren = adj.get(root.id) || [];
+    rootChildren.forEach((childId, idx) => {
+        const color = BRANCH_COLORS[idx % BRANCH_COLORS.length];
+        branchColors.set(childId, color);
+        queue.push({ id: childId, color });
+        
+        // Color the edge from Root -> Child
+        const edge = edges.find(e => e.source === root?.id && e.target === childId);
+        if (edge) {
+            edge.style = { stroke: color, strokeWidth: 2 };
+            edge.animated = false;
+        }
+    });
+
+    while (queue.length > 0) {
+        const { id, color } = queue.shift()!;
+        if (!color) continue;
+
+        const children = adj.get(id) || [];
+        children.forEach(childId => {
+            if (!branchColors.has(childId)) {
+                branchColors.set(childId, color);
+                queue.push({ id: childId, color });
+                
+                // Color the edge from Parent -> Child
+                const edge = edges.find(e => e.source === id && e.target === childId);
+                if (edge) {
+                    edge.style = { stroke: color, strokeWidth: 2 };
+                    edge.animated = false;
+                }
+            }
+        });
+    }
+
+    return edges;
+};
+
+// Fallback for individual edge creation without layout
+export const getEdgeColor = (sourceId: string, diagramType: DiagramType): string => {
+  if (diagramType === DiagramType.FLOWCHART || diagramType === DiagramType.ERD) {
+    return '#64748b';
   }
-  
-  const index = Math.abs(hash) % colors.length;
-  return colors[index];
+  // This is just a fallback; the layout engine does the real work
+  return '#2563eb'; 
 };
 
 /**
  * Improved Layered Layout (Sugiyama-lite)
- * 1. Rank Assignment (Longest Path to respect dependencies)
- * 2. Crossing Reduction (Barycenter Heuristic)
- * 3. Coordinate Assignment
  */
 const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'TB' | 'LR') => {
   if (nodes.length === 0) return;
 
-  // --- Step 1: Rank Assignment (Iterative Relaxation) ---
   const ranks = new Map<string, number>();
   nodes.forEach(n => ranks.set(n.id, 0));
 
-  // Iterate to push nodes down based on parents
   const iterations = nodes.length + 2; 
   for (let i = 0; i < iterations; i++) {
     let changed = false;
     edges.forEach(e => {
       const sourceRank = ranks.get(e.source) || 0;
       const targetRank = ranks.get(e.target) || 0;
-      
       if (targetRank < sourceRank + 1) {
         ranks.set(e.target, sourceRank + 1);
         changed = true;
@@ -86,7 +157,6 @@ const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'T
     if (!changed) break;
   }
 
-  // Group nodes by rank
   const maxRank = Math.max(...Array.from(ranks.values()));
   const layers: DiagramNode[][] = Array.from({ length: maxRank + 1 }, () => []);
   nodes.forEach(n => {
@@ -94,7 +164,7 @@ const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'T
     layers[r].push(n);
   });
 
-  // --- Step 2: Crossing Reduction (Barycenter Heuristic) ---
+  // Barycenter Crossing Reduction
   for (let i = 1; i < layers.length; i++) {
     const prevLayer = layers[i - 1];
     const currentLayer = layers[i];
@@ -111,24 +181,26 @@ const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'T
     });
   }
 
-  // --- Step 3: Coordinate Assignment ---
+  // Coordinate Assignment
   layers.forEach((layerNodes, r) => {
     const layerSize = layerNodes.length;
-    const currentLayerWidth = (layerSize - 1) * X_SPACING; 
-    const startOffset = -(currentLayerWidth / 2);
-
+    
     layerNodes.forEach((node, idx) => {
       if (direction === 'TB') {
+        // Center the layer
+        const width = (layerSize - 1) * X_SPACING;
+        const xOffset = -(width / 2);
         node.position = {
-          x: startOffset + idx * X_SPACING,
+          x: xOffset + idx * X_SPACING,
           y: r * Y_SPACING
         };
       } else {
-        const layerHeight = (layerSize - 1) * 120;
-        const startY = -(layerHeight / 2);
+        // LR Layout
+        const height = (layerSize - 1) * 120;
+        const yOffset = -(height / 2);
         node.position = {
-          x: r * 300,
-          y: startY + idx * 120
+          x: r * 350,
+          y: yOffset + idx * 120
         };
       }
     });
@@ -140,7 +212,7 @@ const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'T
  */
 const layoutGrid = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
   const cols = Math.ceil(Math.sqrt(nodes.length));
-  const spacingX = 300;
+  const spacingX = 350;
   const spacingY = 250;
 
   nodes.forEach((node, index) => {
@@ -159,18 +231,9 @@ const layoutGrid = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
 const layoutRadial = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
   if (nodes.length === 0) return;
 
-  const targets = new Set(edges.map(e => e.target));
-  let roots = nodes.filter(n => !targets.has(n.id));
+  const incoming = new Set(edges.map(e => e.target));
+  let center = nodes.find(n => !incoming.has(n.id)) || nodes[0];
   
-  if (roots.length === 0) {
-    roots = nodes.sort((a, b) => {
-        const degA = edges.filter(e => e.source === a.id || e.target === a.id).length;
-        const degB = edges.filter(e => e.source === b.id || e.target === b.id).length;
-        return degB - degA;
-    }).slice(0, 1);
-  }
-
-  const center = roots[0];
   const visited = new Set<string>();
   visited.add(center.id);
   center.position = { x: 0, y: 0 };
@@ -188,21 +251,29 @@ const layoutRadial = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
 
       children.forEach((child, idx) => {
           visited.add(child.id);
+          // Center the angle in the sector
           const angle = startAngle + (sectorPerChild * idx) + (sectorPerChild / 2);
-          const radius = level * 300;
+          const radius = level * 350; // Increased radius for better separation
 
           child.position = {
               x: radius * Math.cos(angle),
               y: radius * Math.sin(angle)
           };
-          layoutChildren(child.id, startAngle + (sectorPerChild * idx), startAngle + (sectorPerChild * (idx + 1)), level + 1);
+          
+          layoutChildren(
+            child.id, 
+            startAngle + (sectorPerChild * idx), 
+            startAngle + (sectorPerChild * (idx + 1)), 
+            level + 1
+          );
       });
   };
 
   layoutChildren(center.id, 0, 2 * Math.PI, 1);
 
+  // Handle disconnected islands
   const unvisited = nodes.filter(n => !visited.has(n.id));
   unvisited.forEach((n, i) => {
-      n.position = { x: -500, y: i * 150 };
+      n.position = { x: -600, y: i * 200 };
   });
 };

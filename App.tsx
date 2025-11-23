@@ -3,7 +3,7 @@ import Wizard from './components/Wizard';
 import DiagramView from './components/DiagramView';
 import { DiagramType, LayoutStyle, DiagramNode, DiagramEdge } from './types';
 import { generateDiagram } from './services/gemini';
-import { applyLayout, getEdgeColor } from './utils/layout';
+import { applyLayout } from './utils/layout';
 import { MarkerType } from 'reactflow';
 
 function App() {
@@ -17,8 +17,8 @@ function App() {
         border: '1px solid #b1b1b7',
         borderRadius: '8px',
         padding: '10px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-        minWidth: '100px',
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+        minWidth: '120px',
         fontSize: '12px',
         textAlign: 'center' as const
     };
@@ -33,18 +33,18 @@ function App() {
                 transform: 'rotate(0deg)', 
                 fontWeight: 'bold',
                 clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)', 
-                padding: '20px 10px', 
-                width: '120px',
-                height: '80px',
+                padding: '24px 12px', 
+                width: '140px',
+                height: '90px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
             };
         }
         if (type?.toLowerCase().includes('start') || type?.toLowerCase().includes('end')) {
-            return { ...baseStyle, borderRadius: '20px', background: '#f0fff4', border: '2px solid #38a169', fontWeight: 'bold' };
+            return { ...baseStyle, borderRadius: '25px', background: '#f0fff4', border: '2px solid #38a169', fontWeight: 'bold' };
         }
-        return { ...baseStyle, borderRadius: '2px', border: '1px solid #3182ce' };
+        return { ...baseStyle, borderRadius: '4px', border: '1px solid #3182ce' };
     }
 
     if (diagramType === DiagramType.ERD) {
@@ -54,9 +54,18 @@ function App() {
             border: '1px solid #4a5568',
             borderTop: '4px solid #4a5568', // Header look
             background: '#f7fafc',
-            boxShadow: '2px 2px 0px rgba(0,0,0,0.1)',
+            boxShadow: '4px 4px 0px rgba(0,0,0,0.1)',
             textAlign: 'left' as const,
             padding: '8px 12px'
+        };
+    }
+
+    // Mindmap Styling
+    if (diagramType === DiagramType.MINDMAP) {
+        return {
+            ...baseStyle,
+            borderRadius: '12px',
+            borderWidth: '2px'
         };
     }
 
@@ -68,6 +77,11 @@ function App() {
     try {
       const rawData = await generateDiagram(type, description, layout, additionalData);
       
+      // Determine Edge Type: 'default' (Bezier) for Mindmaps, 'smoothstep' for others
+      const edgeType = (type === DiagramType.MINDMAP || type === DiagramType.ORG_CHART) 
+          ? 'default' 
+          : 'smoothstep';
+
       // Transform API response to React Flow format
       const nodes: DiagramNode[] = rawData.nodes.map(n => ({
         id: n.id,
@@ -82,18 +96,15 @@ function App() {
         source: e.source,
         target: e.target,
         label: e.label,
-        type: 'smoothstep', 
+        type: edgeType, 
         markerEnd: {
             type: MarkerType.ArrowClosed,
         },
-        animated: false, // Static lines
-        style: { 
-            stroke: getEdgeColor(e.source, type), 
-            strokeWidth: 2 
-        }
+        animated: false, // Ensure static lines
+        style: { strokeWidth: 2 } // Layout will assign colors
       }));
 
-      // Apply Layout Algorithm
+      // Apply Layout & Coloring
       const layoutedData = applyLayout(nodes, edges, layout, type);
 
       setDiagramData({

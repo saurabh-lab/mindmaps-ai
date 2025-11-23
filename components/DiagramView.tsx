@@ -73,10 +73,10 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
   const onConnect = useCallback((params: Connection) => {
     setEdges((eds) => addEdge({ 
         ...params, 
-        type: 'smoothstep', 
+        type: (diagramType === DiagramType.MINDMAP) ? 'default' : 'smoothstep', 
         animated: false, 
         markerEnd: { type: MarkerType.ArrowClosed },
-        style: { stroke: getEdgeColor(params.source || '', diagramType), strokeWidth: 2 }
+        style: { stroke: '#64748b', strokeWidth: 2 } // Default neutral, layout will fix if run
     }, eds));
   }, [setEdges, diagramType]);
 
@@ -137,7 +137,7 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
     const id = `child-${Date.now()}`;
     const newNode: DiagramNode = {
       id,
-      position: { x: selectedNode.position.x, y: selectedNode.position.y + 150 },
+      position: { x: selectedNode.position.x + 50, y: selectedNode.position.y + 100 },
       data: { label: 'New Child' },
       type: 'default',
       style: { 
@@ -153,10 +153,10 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
       id: `e-${selectedNode.id}-${id}`,
       source: selectedNode.id,
       target: id,
-      type: 'smoothstep',
+      type: (diagramType === DiagramType.MINDMAP) ? 'default' : 'smoothstep',
       markerEnd: { type: MarkerType.ArrowClosed },
       animated: false,
-      style: { stroke: getEdgeColor(selectedNode.id, diagramType), strokeWidth: 2 }
+      style: { stroke: '#64748b', strokeWidth: 2 }
     };
     setNodes((nds) => nds.concat(newNode));
     setEdges((eds) => eds.concat(newEdge));
@@ -173,10 +173,12 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
       const result = await drillDownNode(label, context, diagramType);
 
       // 1. Create new nodes and edges
+      const edgeType = (diagramType === DiagramType.MINDMAP) ? 'default' : 'smoothstep';
+      
       const newNodes: DiagramNode[] = result.newNodes.map((n, idx) => ({
         id: `gen-${Date.now()}-${idx}`,
         type: 'default',
-        position: { x: 0, y: 0 }, // Layout will fix this
+        position: { x: 0, y: 0 }, 
         data: { label: n.label, details: n.details, type: n.type },
         style: { 
             background: '#fff', 
@@ -191,10 +193,10 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
         id: `e-${selectedNode.id}-${n.id}`,
         source: selectedNode.id,
         target: n.id,
-        type: 'smoothstep',
+        type: edgeType,
         markerEnd: { type: MarkerType.ArrowClosed },
         animated: false,
-        style: { stroke: getEdgeColor(selectedNode.id, diagramType), strokeWidth: 2 }
+        style: { strokeWidth: 2 } // Layout will color
       }));
 
       // 2. Merge with existing
@@ -202,7 +204,6 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
       const allEdges = [...edges, ...newEdges];
 
       // 3. RE-APPLY LAYOUT to ensure quality is maintained
-      // We determine style based on diagram type
       let layoutStyle = LayoutStyle.TREE;
       if (diagramType === DiagramType.MINDMAP) layoutStyle = LayoutStyle.RADIAL;
       
@@ -246,6 +247,8 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
     try {
       const result = await updateDiagram(nodes, edges, promptText, diagramType);
       
+      const edgeType = (diagramType === DiagramType.MINDMAP) ? 'default' : 'smoothstep';
+
       // Process results
       const newNodes: DiagramNode[] = result.nodes.map(n => ({
         id: n.id,
@@ -263,14 +266,14 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
       }));
 
       const newEdges: DiagramEdge[] = result.edges.map((e, idx) => ({
-        id: `e${idx}-${Date.now()}`, // Ensure unique IDs
+        id: `e${idx}-${Date.now()}`, 
         source: e.source,
         target: e.target,
         label: e.label,
-        type: 'smoothstep',
+        type: edgeType,
         markerEnd: { type: MarkerType.ArrowClosed },
         animated: false,
-        style: { stroke: getEdgeColor(e.source, diagramType), strokeWidth: 2 }
+        style: { strokeWidth: 2 }
       }));
 
       // Re-apply layout on the WHOLE graph
