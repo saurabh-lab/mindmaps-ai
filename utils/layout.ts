@@ -30,6 +30,33 @@ export const applyLayout = (
   return { nodes: newNodes, edges };
 };
 
+export const getEdgeColor = (sourceId: string, diagramType: DiagramType): string => {
+  // Professional look for Flowcharts/ERDs
+  if (diagramType === DiagramType.FLOWCHART || diagramType === DiagramType.ERD) {
+    return '#64748b'; // slate-500
+  }
+
+  // Colorful branches for Mindmaps/OrgCharts
+  const colors = [
+    '#2563eb', // blue-600
+    '#db2777', // pink-600
+    '#d97706', // amber-600
+    '#16a34a', // green-600
+    '#9333ea', // purple-600
+    '#0891b2', // cyan-600
+    '#dc2626', // red-600
+    '#4f46e5', // indigo-600
+  ];
+  
+  let hash = 0;
+  for (let i = 0; i < sourceId.length; i++) {
+    hash = sourceId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  const index = Math.abs(hash) % colors.length;
+  return colors[index];
+};
+
 /**
  * Improved Layered Layout (Sugiyama-lite)
  * 1. Rank Assignment (Longest Path to respect dependencies)
@@ -44,7 +71,6 @@ const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'T
   nodes.forEach(n => ranks.set(n.id, 0));
 
   // Iterate to push nodes down based on parents
-  // We run strictly limited iterations to handle cycles gracefully
   const iterations = nodes.length + 2; 
   for (let i = 0; i < iterations; i++) {
     let changed = false;
@@ -52,7 +78,6 @@ const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'T
       const sourceRank = ranks.get(e.source) || 0;
       const targetRank = ranks.get(e.target) || 0;
       
-      // Force target to be at least source + 1
       if (targetRank < sourceRank + 1) {
         ranks.set(e.target, sourceRank + 1);
         changed = true;
@@ -70,38 +95,25 @@ const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'T
   });
 
   // --- Step 2: Crossing Reduction (Barycenter Heuristic) ---
-  // Sort nodes in each layer based on the average position of their parents in the previous layer
   for (let i = 1; i < layers.length; i++) {
     const prevLayer = layers[i - 1];
     const currentLayer = layers[i];
-
-    // Map node ID to index in previous layer
     const prevIndexMap = new Map(prevLayer.map((n, idx) => [n.id, idx]));
 
     currentLayer.sort((a, b) => {
       const getBarycenter = (node: DiagramNode) => {
         const parents = edges.filter(e => e.target === node.id && ranks.get(e.source) === i - 1);
-        if (parents.length === 0) {
-           // If no parents in immediate prev layer, keep relative order or push to side
-           return -1; 
-        }
+        if (parents.length === 0) return -1; 
         const sum = parents.reduce((acc, e) => acc + (prevIndexMap.get(e.source) ?? 0), 0);
         return sum / parents.length;
       };
-
       return getBarycenter(a) - getBarycenter(b);
     });
   }
 
   // --- Step 3: Coordinate Assignment ---
-  // Calculate maximum width to help centering
-  const maxLayerWidth = Math.max(...layers.map(l => l.length));
-  
   layers.forEach((layerNodes, r) => {
     const layerSize = layerNodes.length;
-    
-    // Calculate offsets to center the layer
-    // Width of this specific layer
     const currentLayerWidth = (layerSize - 1) * X_SPACING; 
     const startOffset = -(currentLayerWidth / 2);
 
@@ -112,13 +124,10 @@ const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'T
           y: r * Y_SPACING
         };
       } else {
-        // Left-to-Right
-        // We swap axes. Ranks become X, index within rank becomes Y
-        const layerHeight = (layerSize - 1) * 120; // Tighter vertical spacing for lists
+        const layerHeight = (layerSize - 1) * 120;
         const startY = -(layerHeight / 2);
-        
         node.position = {
-          x: r * 300, // Wider separation for text
+          x: r * 300,
           y: startY + idx * 120
         };
       }
@@ -128,21 +137,15 @@ const layoutLayered = (nodes: DiagramNode[], edges: DiagramEdge[], direction: 'T
 
 /**
  * Grid Layout for ERDs
- * Uses a wider grid to prevent overlapping of large entity boxes
  */
 const layoutGrid = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
   const cols = Math.ceil(Math.sqrt(nodes.length));
   const spacingX = 300;
   const spacingY = 250;
 
-  // Sort nodes slightly to keep connected ones near each other (simple heuristic)
-  // We can use the same Rank logic to roughly order them
-  // But simple grid is often clearer for "Database Schema" style than a tree
-  
   nodes.forEach((node, index) => {
     const col = index % cols;
     const row = Math.floor(index / cols);
-
     node.position = {
       x: col * spacingX,
       y: row * spacingY
@@ -152,17 +155,13 @@ const layoutGrid = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
 
 /**
  * Radial Layout for Mindmaps
- * Improved to handle subtree angle distribution
  */
 const layoutRadial = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
   if (nodes.length === 0) return;
 
-  // 1. Find Center
   const targets = new Set(edges.map(e => e.target));
-  // Nodes that are not targets of any edge are roots
   let roots = nodes.filter(n => !targets.has(n.id));
   
-  // If circular or no clear root, pick the one with most connections
   if (roots.length === 0) {
     roots = nodes.sort((a, b) => {
         const degA = edges.filter(e => e.source === a.id || e.target === a.id).length;
@@ -175,9 +174,6 @@ const layoutRadial = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
   const visited = new Set<string>();
   visited.add(center.id);
   center.position = { x: 0, y: 0 };
-
-  // We will use a recursive function to layout children
-  // allocating sectors of the circle
   
   const layoutChildren = (parentId: string, startAngle: number, endAngle: number, level: number) => {
       const children = edges
@@ -192,8 +188,6 @@ const layoutRadial = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
 
       children.forEach((child, idx) => {
           visited.add(child.id);
-          
-          // Center angle for this child
           const angle = startAngle + (sectorPerChild * idx) + (sectorPerChild / 2);
           const radius = level * 300;
 
@@ -201,15 +195,12 @@ const layoutRadial = (nodes: DiagramNode[], edges: DiagramEdge[]) => {
               x: radius * Math.cos(angle),
               y: radius * Math.sin(angle)
           };
-
-          // Recurse
           layoutChildren(child.id, startAngle + (sectorPerChild * idx), startAngle + (sectorPerChild * (idx + 1)), level + 1);
       });
   };
 
   layoutChildren(center.id, 0, 2 * Math.PI, 1);
 
-  // Handle disconnected nodes - stack them
   const unvisited = nodes.filter(n => !visited.has(n.id));
   unvisited.forEach((n, i) => {
       n.position = { x: -500, y: i * 150 };

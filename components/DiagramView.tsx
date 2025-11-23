@@ -18,7 +18,7 @@ import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { DiagramNode, DiagramEdge, DiagramType, LayoutStyle } from '../types';
 import { drillDownNode, getNodeDetails, updateDiagram } from '../services/gemini';
-import { applyLayout } from '../utils/layout';
+import { applyLayout, getEdgeColor } from '../utils/layout';
 import { 
   PlusCircle, Info, X, Loader2, Download, RotateCcw, Trash2, 
   CornerDownRight, Edit3, Plus, Link as LinkIcon, ChevronDown,
@@ -71,8 +71,14 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
   }, [selectedNode]);
 
   const onConnect = useCallback((params: Connection) => {
-    setEdges((eds) => addEdge({ ...params, type: 'smoothstep', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }, eds));
-  }, [setEdges]);
+    setEdges((eds) => addEdge({ 
+        ...params, 
+        type: 'smoothstep', 
+        animated: false, 
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: { stroke: getEdgeColor(params.source || '', diagramType), strokeWidth: 2 }
+    }, eds));
+  }, [setEdges, diagramType]);
 
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
@@ -149,7 +155,8 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
       target: id,
       type: 'smoothstep',
       markerEnd: { type: MarkerType.ArrowClosed },
-      animated: true
+      animated: false,
+      style: { stroke: getEdgeColor(selectedNode.id, diagramType), strokeWidth: 2 }
     };
     setNodes((nds) => nds.concat(newNode));
     setEdges((eds) => eds.concat(newEdge));
@@ -186,7 +193,8 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
         target: n.id,
         type: 'smoothstep',
         markerEnd: { type: MarkerType.ArrowClosed },
-        animated: true,
+        animated: false,
+        style: { stroke: getEdgeColor(selectedNode.id, diagramType), strokeWidth: 2 }
       }));
 
       // 2. Merge with existing
@@ -261,7 +269,8 @@ const DiagramView: React.FC<DiagramViewProps> = ({ initialNodes, initialEdges, d
         label: e.label,
         type: 'smoothstep',
         markerEnd: { type: MarkerType.ArrowClosed },
-        animated: true,
+        animated: false,
+        style: { stroke: getEdgeColor(e.source, diagramType), strokeWidth: 2 }
       }));
 
       // Re-apply layout on the WHOLE graph

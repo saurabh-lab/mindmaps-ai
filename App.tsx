@@ -3,7 +3,7 @@ import Wizard from './components/Wizard';
 import DiagramView from './components/DiagramView';
 import { DiagramType, LayoutStyle, DiagramNode, DiagramEdge } from './types';
 import { generateDiagram } from './services/gemini';
-import { applyLayout } from './utils/layout';
+import { applyLayout, getEdgeColor } from './utils/layout';
 import { MarkerType } from 'reactflow';
 
 function App() {
@@ -82,13 +82,15 @@ function App() {
         source: e.source,
         target: e.target,
         label: e.label,
-        // Using smoothstep for everything reduces visual complexity vs step
         type: 'smoothstep', 
         markerEnd: {
             type: MarkerType.ArrowClosed,
         },
-        animated: true,
-        style: { stroke: '#555', strokeWidth: 1.5 }
+        animated: false, // Static lines
+        style: { 
+            stroke: getEdgeColor(e.source, type), 
+            strokeWidth: 2 
+        }
       }));
 
       // Apply Layout Algorithm
