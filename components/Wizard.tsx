@@ -65,7 +65,7 @@ const Wizard: React.FC<WizardProps> = ({ onSubmit, loading }) => {
       {loading ? (
         <div className="flex flex-col items-center justify-center h-64 gap-4">
           <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-gray-600 animate-pulse">Generating your diagram with Gemini 3 Pro...</p>
+          <p className="text-gray-600 animate-pulse">Generating your diagram with Gemini 2.5...</p>
         </div>
       ) : (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 min-h-[400px]">

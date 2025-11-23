@@ -1,5 +1,5 @@
 {
   "name": "MindGenius AI",
-  "description": "An AI-powered visualization tool for creating Mindmaps, Flowcharts, and ER Diagrams using Gemini 3 Pro.",
+  "description": "An AI-powered visualization tool for creating Mindmaps, Flowcharts, and ER Diagrams using Gemini 2.5.",
   "requestFramePermissions": []
 }

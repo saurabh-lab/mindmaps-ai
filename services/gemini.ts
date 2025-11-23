@@ -1,8 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { DiagramType, LayoutStyle, GeneratedResponse, DrillDownResponse } from "../types";
 
-// Upgraded to 3-pro for complex reasoning and detailed generation
-const MODEL_NAME = 'gemini-3-pro-preview';
+// Reverting to 2.5-flash as requested
+const MODEL_NAME = 'gemini-2.5-flash';
 
 // Lazy initialization to prevent crash if env vars are missing at startup
 let aiInstance: GoogleGenAI | null = null;
